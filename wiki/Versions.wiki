@@ -1,0 +1,17 @@
+#summary How versioning is organized within the project.
+#labels Phase-Requirements
+
+The active development takes place at the _trunk_ only. The former should not be _used_.
+
+Within the released branches the only activity may be bugfixing. The features are frozen.
+
+When we are ready to release a new version, we:
+  * copy _trunk_ to the _tags/V.N_ branch (_V.N._ means version number)
+  * export it to the _Zizelo-V.N_ directory, pack it as _Zizelo-V.N.7z_ and add to the _Downloads_ section
+  * label the new download as featured and remove this label from the previous release
+  * clone [Usage] wiki page as _Usage-P.V._, where _P.V._ is the previous version number (*TODO:* explore possible naming restrictions) and make the new page non-featured
+  * update [Usage] wiki page to represent the newest version
+
+Versions number consist of dot-separated major and minor numbers. The first version is 1.0. The next releases are numbered 1.1, 1.2, etc. The major number is incremented when and only when the new version differs _a lot_ from the previous. Then is becomes 2.0, 2.1, 2.2 etc.
+
+The backward compatibility between versions, ever minors of the same major, is neither guaranteed nor considered.

@@ -1,0 +1,157 @@
+#summary Indexed search with Zizelo is as simple as 3 steps
+#labels Featured,Phase-Deploy
+
+*This guide is for version 1.0.*
+
+Basic usage includes:
+ # Configuring.
+ # Indexing.
+ # Searching.
+
+= Configuring =
+
+== Installation ==
+
+There are two ways to install Zizelo: by Subversion checkout and by downloading package.
+
+To download last stable version, visit the _Downloads_ section.
+
+The Subversion URL is http://zizelo.googlecode.com/svn/tags/1.0/Zizelo/. *You should not use _trunk_* because it is for development and is not stable.
+
+If _your_ project is Subversion based, you may want to set the `svn:externals` propery. For example, if your Web site is based on Zend Framework and uses Doctrine ORM and Zizelo, you may have _library_ directory with `svn:externals` like the following:
+
+{{{
+Zend http://framework.zend.com/svn/framework/standard/tags/release-1.8.4/library/Zend/
+Doctrine http://svn.doctrine-project.org/tags/1.1.3/lib/
+Zizelo http://zizelo.googlecode.com/svn/tags/1.0/Zizelo/
+}}}
+
+See also the _Source_ section.
+
+== Loading classes ==
+
+Zizelo PHP code consists of several files containing several classes. You should use [http://php.net/manual/en/language.oop5.autoload.php autoloading] to include them in your project.
+
+Zizelo follows the [http://groups.google.com/group/php-standards/web/psr-0-final-proposal?pli=1 PSR-0] convention: the names of the classes correspond to file system. For example, class `Zizelo_Facade` resides in _Zizelo/Facade.php_ and interface `Zizelo_Analyzer_Interface` resides in _Zizelo/Analyzer/Interface.php_.
+
+This convention is supported, in particular, by Zend Framework, so you should be familiar with autoloading if you use ZF. You may also write your own little `__autoload` function like this:
+
+{{{
+set_include_path(
+    "/path/to/Zizelo"
+    . PATH_SEPARATOR . get_include_path()
+);
+
+function __autoload($class_name) {
+    require_once str_replace("_", DIRECTORY_SEPARATOR, $class_name) . ".php";
+}
+}}}
+
+If you do not want to use autoloading, you can always just include every Zizelo’s .php file with `require_once`, or combine all .php files into one large file and include it (by the way, this particular approach is also good for production servers).
+
+== Setting storage ==
+
+Zizelo can store generated indexes in different ways. For example, it could use networking database like MySQL, or local file database like SQLite, or just local file of special format. This is called storage and you need to specify which storage you will use.
+
+At the moment, [http://php.net/manual/en/book.pdo.php PDO] based storage is provided out of the box. It allows storage in MySQL, SQLite etc. and should be good in most cases. Additional storages may be created easily. Just implement `Zizelo_Storage_Interface`.
+
+To use Zizelo, you must instantiate storage and pass it to `Zizelo_Facade`. You must do it before any other operation with Zizelo, so good place to do it is in the bootstrap or in the beginning of your program.
+
+For `Zizelo_Storage_Pdo` you need `PDO` instance. It sets the connection to database. See PDO reference.
+
+First, create database. Zizelo has been tested on MySQL 5.1 and SQLite 3. Other PDO drivers may work as well.
+
+Then create tables in the database. See scripts in the _sql_ directory of Zizelo’s source tree.
+
+In your PHP code, construct an `Zizelo_Storage_Pdo` instance and pass it to the `setDefaultStorage` method of `Zizelo_Facade`:
+
+{{{
+$connection = new PDO('sqlite:/path/to/database.sqlite');
+$storage = new Zizelo_Storage_Pdo($connection);
+Zizelo_Facade::setDefaultStorage($storage);
+}}}
+
+You can do it in one line:
+
+{{{
+Zizelo_Facade::setDefaultStorage(new Zizelo_Storage_Pdo(new PDO('sqlite:/path/to/database.sqlite')));
+}}}
+
+`Zizelo_Storage_Pdo`’s constructor accepts optional second argument: table name prefix. If you have very limited Web hosting, you may find this feature useful. By default, Zizelo uses `zizelo_` prefix.
+
+= Indexing =
+
+In order to be able to find objects (articles, blog entries, products, people), you must index them first. Indexing is the process of parsing textual information about objects and storing it in the index. Later, when a visitor enters a search query, this prepared index is operated very efficiently.
+
+In terms of Zizelo, the indexed objects are called documents. For example, if you have list of movies, for each movie you have some text (titles, genres, description). It is document.
+
+Along with text, document has a numeric identifier, and for the sake of ease it is usually equal to the identifier of actual object in the database. If your movie has ID = 5375, the document for that movie has ID = 5375, too.
+
+You need to establish a way to get object by it’s correspondent document’s identifier.
+
+There are two basic approach for indexing:
+ # Indexing every object when it’s created or changed.
+ # Indexing all objects periodically.
+   # Indexing periodically all existing objects.
+   # Indexing periodically only those objects which have not been indexed yet.
+
+Approach 1 is good for most cases, but you may need to include indexing code into several places of your code (like methods `create` and `save`). Approach 2 usually requires single script for indexing, and it runs as _cron_ job.
+
+Approach 2.1 is good for little amounts of data. On large data it will be slow. On the other hand, approach 2.2 may miss when indexed objects change and will not reindex them.
+
+You may choose your approach based on your requirements.
+
+Zizelo provides several methods for operating index. First of all, you have to get working instance of your index. It is done with the `getIndex` method of `Zizelo_Facade`:
+
+{{{
+$index = Zizelo_Facade::getIndex("books");
+}}}
+
+Pass the name of your index as an argument. You may have several different indexes. For example, you have list of books on your site and you have list of their authors. If you want to be able to search them independently, you should create two indexes: “books” and “authors”. If you want to search both book titles and author names, you can create single index.
+
+After you got your index instance, use its methods to add and remove documents.
+
+{{{
+$index->clear(); // remove all documents
+$index->addDocument(5375, 'The Picture of Dorian Gray'); // add book title to the index
+$index->removeDocument(5375); // remove the document from the index
+}}}
+
+Here is a complete example of reindexing the whole list of books (approach 2.2) utilizing _Doctrine_ ORM:
+
+{{{
+$index = Zizelo_Facade::getIndex("books");
+$index->clear();
+foreach (Doctrine::getTable("Book")->findAll() as $book) {
+    $index->addDocument($book->getId(), $book->getTitle() . " " . $book->getDescription());
+}
+}}}
+
+= Searching =
+
+After building the index, you may search it.
+
+Searching the index is as easy as calling its `search` method:
+
+{{{
+$matches = Zizelo_Facade::getIndex("books")->search("dorian gray");
+}}}
+
+The result is an array of numeric identifiers of matched documents. If the index contains document for _The Picture of Dorian Gray_ (see example above), `$matches` will contain 5375 (and may contain another identifiers as well, if there are other books with “Dorian Gray” in titles).
+
+The array is sorted: most relevant results are in the end.
+
+You can now fetch actual books from the database using their identifiers and show their list to the visitor.
+
+{{{
+foreach ($matches as $id) {
+    $book = $this->findBook($id);
+    print_r($book);
+}
+
+// or:
+$books = Doctrine_Query::create()
+    ->from("Book")
+    ->whereIn("id", $matches)
+    ->execute();
+}}}
